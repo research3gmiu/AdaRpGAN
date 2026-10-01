@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AdaRpGAN Training Monitor</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap');
+        
+        :root {
+            --bg-color: #0f172a;
+            --panel-bg: rgba(30, 41, 59, 0.7);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #38bdf8;
+            --border: rgba(255, 255, 255, 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-color);
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(56, 189, 248, 0.15), transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.15), transparent 25%);
+            background-attachment: fixed;
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+        }
+
+        header {
+            width: 100%;
+            max-width: 1000px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            animation: fadeInDown 0.8s ease-out;
+        }
+
+        h1 {
+            font-weight: 600;
+            font-size: 1.8rem;
+            background: linear-gradient(to right, #38bdf8, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(16, 185, 129, 0.1);
+            color: #10b981;
+            padding: 0.5rem 1rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            box-shadow: 0 0 15px rgba(16, 185, 129, 0.2);
+        }
+
+        .pulse {
+            width: 8px;
+            height: 8px;
+            background-color: #10b981;
+            border-radius: 50%;
+            animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
+
+        main {
+            width: 100%;
+            max-width: 1000px;
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            animation: fadeInUp 0.8s ease-out 0.2s both;
+        }
+
+        .glass-panel {
+            background: var(--panel-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            display: flex;
+            flex-direction: column;
+            height: 75vh;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0.75rem;
+        }
+
+        .panel-title {
+            font-size: 1rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+        }
+
+        .terminal-container {
+            position: relative;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+        }
+
+        .terminal-header {
+            background: rgba(255, 255, 255, 0.03);
+            padding: 0.5rem 1rem;
+            display: flex;
+            gap: 0.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .mac-btn {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        .mac-btn.close { background: #ef4444; }
+        .mac-btn.min { background: #eab308; }
+        .mac-btn.max { background: #22c55e; }
+
+        pre {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.875rem;
+            line-height: 1.5;
+            padding: 1.5rem;
+            overflow-y: auto;
+            flex-grow: 1;
+            color: #e2e8f0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            scroll-behavior: smooth;
+        }
+
+        pre::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        pre::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.2);
+        }
+        pre::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+        }
+        pre::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        /* Animations */
+        @keyframes ping {
+            75%, 100% { transform: scale(2); opacity: 0; }
+        }
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>AdaRpGAN Monitor</h1>
+        <div class="status-badge">
+            <div class="pulse"></div>
+            Live Updates
+        </div>
+    </header>
+
+    <main>
+        <div class="glass-panel">
+            <div class="panel-header">
+                <div class="panel-title">Training Logs (full_pipeline_run.log)</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);" id="last-updated">Waiting for data...</div>
+            </div>
+            
+            <div class="terminal-container">
+                <div class="terminal-header">
+                    <div class="mac-btn close"></div>
+                    <div class="mac-btn min"></div>
+                    <div class="mac-btn max"></div>
+                </div>
+                <pre id="log-output">Loading logs...</pre>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const logOutput = document.getElementById('log-output');
+        const lastUpdated = document.getElementById('last-updated');
+        
+        let isScrolledToBottom = true;
+
+        logOutput.addEventListener('scroll', () => {
+            // Check if user is scrolled to the bottom (with a 10px threshold)
+            isScrolledToBottom = Math.abs(logOutput.scrollHeight - logOutput.scrollTop - logOutput.clientHeight) < 10;
+        });
+
+        async function fetchLogs() {
+            try {
+                const response = await fetch('/api/logs');
+                if (response.ok) {
+                    const data = await response.json();
+                    if (logOutput.textContent !== data.logs) {
+                        logOutput.textContent = data.logs || "Log file is empty.";
+                        if (isScrolledToBottom) {
+                            logOutput.scrollTop = logOutput.scrollHeight;
+                        }
+                    }
+                    const now = new Date();
+                    lastUpdated.textContent = `Last updated: ${now.toLocaleTimeString()}`;
+                }
+            } catch (error) {
+                console.error("Failed to fetch logs", error);
+                lastUpdated.textContent = "Error fetching logs. Retrying...";
+            }
+        }
+
+        // Fetch immediately, then every 2 seconds
+        fetchLogs();
+        setInterval(fetchLogs, 2000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "AdaRpGAN: A Self-Tuning GAN Training Framework with Adaptive Gradient Penalty and Dynamic Critic Scheduling"
+type: software
+version: 1.0.0
+date-released: 2025-06-29
+license: MIT
+repository-code: "https://github.com/yourusername/adarppgan"
+url: "https://github.com/yourusername/adarppgan"
+abstract: >-
+  AdaRpGAN is a PyTorch-based GAN training framework that automatically tunes the
+  gradient-penalty weight (γ) and discriminator update frequency (n_critic) during
+  training using two closed-loop control signals: an exponential moving average of
+  Lipschitz violation for γ, and rolling-window loss variance for n_critic. Built on
+  a Relativistic GAN backbone, AdaRpGAN achieves a 32.8% FID improvement on CIFAR-10
+  over the fixed-γ baseline with zero additional compute cost.
+keywords:
+  - GAN
+  - generative-adversarial-network
+  - deep-learning
+  - pytorch
+  - adaptive-training
+  - gradient-penalty
+  - relativistic-GAN
+  - self-tuning
+authors:
+  - name: "AdaRpGAN Authors"
+preferred-citation:
+  type: article
+  title: "AdaRpGAN: A Self-Tuning GAN Training Framework with Adaptive Gradient Penalty and Dynamic Critic Scheduling"
+  authors:
+    - name: "AdaRpGAN Authors"
+  year: 2025
+  journal: "Under Review"

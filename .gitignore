@@ -1,0 +1,50 @@
+# AdaRpGAN — Byte-compiled / cached
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Training outputs (large files — don't commit)
+results/
+data/
+quickstart_output/
+*.pt
+*.pth
+!examples/
+
+# Logs
+wandb/
+runs/
+*.log
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Test outputs
+test_report_output/
+*.zip
+implementation_plan.md

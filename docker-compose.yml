@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  jupyterlab:
+    build: .
+    image: adarppgan-jupyter:latest
+    ports:
+      - "8888:8888"
+    volumes:
+      # Mount the current directory to /app in the container
+      - .:/app
+    # Ensure sufficient shared memory for PyTorch dataloaders
+    shm_size: '8g'
+    # Uncomment the below lines if you have NVIDIA GPUs in your shared environment
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]

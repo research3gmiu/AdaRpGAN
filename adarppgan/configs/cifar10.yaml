@@ -1,0 +1,64 @@
+# AdaRpGAN — Default CIFAR-10 Configuration
+# ============================================
+# Use with: python train.py (values here are the argparse defaults)
+# Override any field on the command line, e.g.:  python train.py --epochs 300
+
+experiment:
+  name:      "adarppgan_cifar10"
+  seed:      42
+  device:    "auto"          # "auto" → CUDA if available, else CPU
+
+data:
+  dataset:    "cifar10"
+  root:       "./data"
+  batch_size: 64
+  workers:    4
+  augment:    true           # horizontal flip + random crop
+
+model:
+  z_dim:      128
+  g_base_ch:  256            # Generator base channels
+  d_base_ch:  128            # Discriminator base channels
+
+training:
+  epochs:     200
+  lr_g:       0.0002         # TTUR: G uses lower lr
+  lr_d:       0.0004         # TTUR: D uses higher lr
+  beta1:      0.0
+  beta2:      0.9
+  gp_type:    "wgan-gp"      # "wgan-gp" or "r1"
+  amp:        true           # Mixed-precision (requires CUDA)
+
+adaptive_controller:
+  # Gamma (GP weight) adaptation
+  gamma_init:   10.0
+  gamma_min:    1.0
+  gamma_max:    50.0
+  alpha_gamma:  0.01         # Step size for γ update
+  ema_beta:     0.99         # EMA momentum for Lipschitz violation
+  viol_target:  0.01         # Desired Lipschitz violation level
+
+  # n_critic adaptation
+  n_critic_init: 1
+  n_critic_min:  1
+  n_critic_max:  5
+  window:        50          # Rolling window for variance
+  sigma_high:    0.50        # Variance threshold → increase n_critic
+  sigma_low:     0.05        # Variance threshold → decrease n_critic
+  cooldown:      100         # Steps between n_critic changes
+
+logging:
+  ckpt_dir:     "./checkpoints"
+  log_every:    100          # Print log every N D-steps
+  save_every:   5            # Save checkpoint every N epochs
+  sample_every: 5            # Save image grid every N epochs
+
+evaluation:
+  n_eval_samples: 50000
+  eval_batch:     256
+
+# ── Baseline config (used when --mode baseline) ─────────────────────────────
+baseline:
+  gamma:    10.0
+  n_critic: 1
+  ckpt_dir: "./checkpoints_baseline"

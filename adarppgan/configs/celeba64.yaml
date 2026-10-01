@@ -1,0 +1,57 @@
+# AdaRpGAN — CelebA 64×64 Configuration
+# ============================================
+# Use with: python train.py --dataset celeba --img-size 64
+# Designed for 4 GB VRAM GPU
+
+experiment:
+  name:      "adarppgan_celeba64"
+  seed:      42
+  device:    "auto"
+
+data:
+  dataset:    "celeba"
+  root:       "./data"
+  img_size:   64
+  batch_size: 16              # Conservative for 4 GB VRAM
+  workers:    4
+  augment:    true
+
+model:
+  z_dim:      128
+  g_base_ch:  256
+  d_base_ch:  128
+
+training:
+  epochs:     100             # CelebA has ~162k images (3× CIFAR-10)
+  lr_g:       0.0002
+  lr_d:       0.0004
+  beta1:      0.0
+  beta2:      0.9
+  gp_type:    "wgan-gp"
+  amp:        true
+
+adaptive_controller:
+  gamma_init:   10.0
+  gamma_min:    1.0
+  gamma_max:    50.0
+  alpha_gamma:  0.01
+  ema_beta:     0.99
+  viol_target:  0.01
+
+  n_critic_init: 1
+  n_critic_min:  1
+  n_critic_max:  5
+  window:        50
+  sigma_high:    0.50
+  sigma_low:     0.05
+  cooldown:      100
+
+logging:
+  ckpt_dir:     "./checkpoints_celeba64"
+  log_every:    100
+  save_every:   5
+  sample_every: 5
+
+evaluation:
+  n_eval_samples: 50000
+  eval_batch:     128         # Smaller eval batch to fit in VRAM
