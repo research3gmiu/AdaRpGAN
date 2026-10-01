@@ -69,18 +69,20 @@ def parse_args():
     p.add_argument("--data-dir", type=str, default=None,
                    help="Image folder path (for --dataset image_folder)")
     p.add_argument("--data-root", type=str, default="./data")
+    p.add_argument("--n-classes", type=int, default=None,
+                   help="Number of classes (default: 10 for cifar10, 0 otherwise)")
 
     # Training
-    p.add_argument("--epochs", type=int, default=200)
-    p.add_argument("--ablation-epochs", type=int, default=100,
+    p.add_argument("--epochs", type=int, default=800)
+    p.add_argument("--ablation-epochs", type=int, default=200,
                    help="Epochs for each ablation condition")
-    p.add_argument("--batch", type=int, default=64)
+    p.add_argument("--batch", type=int, default=128)
     p.add_argument("--workers", type=int, default=4)
 
     # Architecture
     p.add_argument("--z-dim", type=int, default=128)
-    p.add_argument("--g-ch", type=int, default=256)
-    p.add_argument("--d-ch", type=int, default=128)
+    p.add_argument("--g-ch", type=int, default=512)
+    p.add_argument("--d-ch", type=int, default=512)
 
     # Evaluation
     p.add_argument("--fid-samples", type=int, default=50000,
@@ -134,8 +136,9 @@ def build_loader(args):
 
 
 def fresh_models(args):
-    G = Generator(z_dim=args.z_dim, base_ch=args.g_ch, img_size=args.img_size)
-    D = Discriminator(base_ch=args.d_ch, img_size=args.img_size)
+    n_classes = args.n_classes if args.n_classes is not None else (10 if args.dataset == "cifar10" else 0)
+    G = Generator(z_dim=args.z_dim, base_ch=args.g_ch, img_size=args.img_size, n_classes=n_classes)
+    D = Discriminator(base_ch=args.d_ch, img_size=args.img_size, n_classes=n_classes)
     return G, D
 
 
@@ -155,14 +158,22 @@ def train_adarppgan(args, loader, val_loader, device):
 
     G, D = fresh_models(args)
     ckpt_dir = os.path.join(args.output, "adarppgan")
+    n_classes = args.n_classes if args.n_classes is not None else (10 if args.dataset == "cifar10" else 0)
 
     cfg = TrainerConfig(
-        lr_g=2e-4, lr_d=4e-4,
+        lr_g=2e-4, lr_d=2e-4,
         batch_size=args.batch,
         n_epochs=args.epochs,
+        n_classes=n_classes,
+        loss_type="hinge",
+        gp_type="r1",
+        r1_gamma=10.0,
+        r1_interval=16,
+        warmup_epochs=max(1, args.epochs // 100) if not args.quick else 1,
+        use_cosine_lr=True,
         ctrl=ControllerConfig(),
         ckpt_dir=ckpt_dir,
-        log_every=200,
+        log_every=100,
         save_every=max(args.epochs // 10, 1),
         sample_every=max(args.epochs // 10, 1),
         amp=not args.no_amp,
@@ -202,11 +213,21 @@ def train_baseline(args, loader, device):
 
     G, D = fresh_models(args)
     ckpt_dir = os.path.join(args.output, "baseline")
+    n_classes = args.n_classes if args.n_classes is not None else (10 if args.dataset == "cifar10" else 0)
 
     cfg = BaselineConfig(
+        lr_g=2e-4, lr_d=2e-4,
+        batch_size=args.batch,
         n_epochs=args.epochs,
+        n_classes=n_classes,
+        loss_type="hinge",
+        gp_type="r1",
+        r1_gamma=10.0,
+        r1_interval=16,
+        warmup_epochs=max(1, args.epochs // 100) if not args.quick else 1,
+        use_cosine_lr=True,
         ckpt_dir=ckpt_dir,
-        log_every=200,
+        log_every=100,
         save_every=max(args.epochs // 10, 1),
         sample_every=max(args.epochs // 10, 1),
         amp=not args.no_amp,
@@ -242,6 +263,7 @@ def run_ablation(args, loader, val_loader, device):
     ]
 
     ablation_results = []
+    n_classes = args.n_classes if args.n_classes is not None else (10 if args.dataset == "cifar10" else 0)
 
     for name, adapt_g, adapt_n in conditions:
         print(f"\n  ▶ {name}")
@@ -256,8 +278,16 @@ def run_ablation(args, loader, val_loader, device):
                 sigma_low=0.05 if adapt_n else -1e9,
             )
             cfg = TrainerConfig(
-                n_epochs=args.ablation_epochs,
+                lr_g=2e-4, lr_d=2e-4,
                 batch_size=args.batch,
+                n_epochs=args.ablation_epochs,
+                n_classes=n_classes,
+                loss_type="hinge",
+                gp_type="r1",
+                r1_gamma=10.0,
+                r1_interval=16,
+                use_cosine_lr=True,
+                warmup_epochs=max(1, args.ablation_epochs // 100) if not args.quick else 1,
                 ckpt_dir=ckpt_dir,
                 ctrl=ctrl,
                 log_every=500,
@@ -268,11 +298,20 @@ def run_ablation(args, loader, val_loader, device):
             trainer = AdaRpGANTrainer(G, D, loader, cfg, device, val_loader)
         else:
             cfg = BaselineConfig(
-                n_epochs=args.ablation_epochs,
+                lr_g=2e-4, lr_d=2e-4,
                 batch_size=args.batch,
+                n_epochs=args.ablation_epochs,
+                n_classes=n_classes,
+                loss_type="hinge",
+                gp_type="r1",
+                r1_gamma=10.0,
+                r1_interval=16,
+                use_cosine_lr=True,
+                warmup_epochs=max(1, args.ablation_epochs // 100) if not args.quick else 1,
                 ckpt_dir=ckpt_dir,
                 log_every=500,
                 save_every=9999,
+                sample_every=9999,
                 amp=not args.no_amp,
             )
             trainer = BaselineRpGANTrainer(G, D, loader, cfg, device)

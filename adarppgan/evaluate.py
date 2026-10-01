@@ -35,7 +35,9 @@ def parse_args():
 
     # Architecture (must match training)
     p.add_argument("--z-dim",      type=int, default=128)
-    p.add_argument("--g-ch",       type=int, default=256)
+    p.add_argument("--g-ch",       type=int, default=512)
+    p.add_argument("--n-classes",  type=int, default=None,
+                   help="Number of classes (default: 10 for cifar10, 0 otherwise)")
 
     # Evaluation
     p.add_argument("--n-samples",  type=int, default=50000)
@@ -71,8 +73,10 @@ def main():
     if device.type == "cpu" and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
         device = torch.device("mps")
 
-    # Load model with correct resolution
-    G = Generator(z_dim=args.z_dim, base_ch=args.g_ch, img_size=args.img_size)
+    n_classes = args.n_classes if args.n_classes is not None else (10 if args.dataset == "cifar10" else 0)
+
+    # Load model with correct resolution and class conditioning
+    G = Generator(z_dim=args.z_dim, base_ch=args.g_ch, img_size=args.img_size, n_classes=n_classes)
     ckpt = torch.load(args.checkpoint, map_location=device, weights_only=False)
 
     if "G_state" in ckpt:

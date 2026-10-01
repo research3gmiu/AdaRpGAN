@@ -32,32 +32,54 @@ from adarppgan.trainer import (
 from adarppgan.utils import get_cifar10_loaders, compute_fid, plot_ablation_bar
 
 
-def make_ada_trainer(G, D, loader, device, epochs, ckpt_dir,
-                     adapt_gamma=True, adapt_ncritic=True):
+def make_ada_trainer(G, D, loader, device, epochs, batch_size, ckpt_dir,
+                     adapt_gamma=True, adapt_ncritic=True, n_classes=10):
     ctrl = ControllerConfig(
         alpha_gamma  = 0.01  if adapt_gamma   else 0.0,   # α=0 → γ frozen
         sigma_high   = 0.50  if adapt_ncritic else 1e9,   # σ_hi=∞ → n_critic frozen
         sigma_low    = 0.05  if adapt_ncritic else -1e9,
     )
     cfg = TrainerConfig(
-        n_epochs=epochs, ckpt_dir=ckpt_dir, ctrl=ctrl,
-        log_every=200, save_every=9999, sample_every=9999,
+        batch_size   = batch_size,
+        n_epochs     = epochs,
+        n_classes    = n_classes,
+        loss_type    = "hinge",
+        gp_type      = "r1",
+        r1_gamma     = 10.0,
+        r1_interval  = 16,
+        use_cosine_lr = True,
+        ckpt_dir     = ckpt_dir,
+        ctrl         = ctrl,
+        log_every    = 200,
+        save_every   = 9999,
+        sample_every = 9999,
     )
     return AdaRpGANTrainer(G, D, loader, cfg, device)
 
 
-def make_baseline_trainer(G, D, loader, device, epochs, ckpt_dir):
+def make_baseline_trainer(G, D, loader, device, epochs, batch_size, ckpt_dir, n_classes=10):
     cfg = BaselineConfig(
-        n_epochs=epochs, ckpt_dir=ckpt_dir,
-        log_every=200, save_every=9999,
+        batch_size   = batch_size,
+        n_epochs     = epochs,
+        n_classes    = n_classes,
+        loss_type    = "hinge",
+        gp_type      = "r1",
+        r1_gamma     = 10.0,
+        r1_interval  = 16,
+        use_cosine_lr = True,
+        ckpt_dir     = ckpt_dir,
+        log_every    = 200,
+        save_every   = 9999,
+        sample_every = 9999,
     )
     return BaselineRpGANTrainer(G, D, loader, cfg, device)
 
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--epochs",    type=int, default=100)
-    p.add_argument("--batch",     type=int, default=64)
+    p.add_argument("--epochs",    type=int, default=200)
+    p.add_argument("--batch",     type=int, default=128)
+    p.add_argument("--n-classes", type=int, default=10)
     p.add_argument("--data-root", type=str, default="./data")
     p.add_argument("--out-dir",   type=str, default="./ablation_results")
     p.add_argument("--seed",      type=int, default=42)
@@ -67,6 +89,8 @@ def parse_args():
 def main():
     args   = parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if device.type == "cpu" and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        device = torch.device("mps")
     os.makedirs(args.out_dir, exist_ok=True)
     torch.manual_seed(args.seed)
 
@@ -88,16 +112,19 @@ def main():
         print(f"  Condition: {name}")
         print(f"{'='*60}")
 
-        G = Generator(); D = Discriminator()
+        G = Generator(n_classes=args.n_classes)
+        D = Discriminator(n_classes=args.n_classes)
         ckpt_dir = os.path.join(args.out_dir, name.replace(" ", "_").replace("(", "").replace(")", ""))
 
         if adapt_g or adapt_n:
             trainer = make_ada_trainer(
-                G, D, loader, device, args.epochs, ckpt_dir,
-                adapt_gamma=adapt_g, adapt_ncritic=adapt_n,
+                G, D, loader, device, args.epochs, args.batch, ckpt_dir,
+                adapt_gamma=adapt_g, adapt_ncritic=adapt_n, n_classes=args.n_classes,
             )
         else:
-            trainer = make_baseline_trainer(G, D, loader, device, args.epochs, ckpt_dir)
+            trainer = make_baseline_trainer(
+                G, D, loader, device, args.epochs, args.batch, ckpt_dir, n_classes=args.n_classes,
+            )
 
         trainer.fit()
 

@@ -1,12 +1,19 @@
 """
 Resolution-flexible Discriminator for AdaRpGAN.
 
-Architecture: Residual SN-GAN discriminator with optional self-attention.
-Returns raw logits (no sigmoid) for relativistic loss computation.
+Architecture: Residual SN-GAN discriminator with optional self-attention
+and projection conditioning (Miyato & Koyama, 2018).
+
+Returns raw logits (no sigmoid) for relativistic/hinge loss computation.
 
 Supports: 32, 64, 128, 256 (any power-of-2 ≥ 8).
 Self-attention is injected at the ~16×16 feature map for img_size ≥ 64.
-Default behaviour (img_size=32) is identical to the original CIFAR-10 discriminator.
+
+Changes from v1:
+  - Projection discriminator for class-conditioned discrimination
+  - Orthogonal initialisation for all conv/linear layers
+  - Wider default base channels (512)
+  - Supports both conditional (n_classes > 0) and unconditional mode
 """
 
 import math
@@ -41,24 +48,33 @@ class ResBlockDown(nn.Module):
 
 class Discriminator(nn.Module):
     """
-    Resolution-flexible Discriminator with optional self-attention.
-    (B, 3, img_size, img_size) → (B, 1) raw logits.
+    Resolution-flexible Discriminator with optional self-attention
+    and projection conditioning.
+
+    (B, 3, img_size, img_size) [+ y (B,)] → (B, 1) raw logits.
+
+    When n_classes > 0, uses the projection discriminator approach:
+      output = h^T w + (embed(y))^T h
+    where h is the penultimate feature vector.
 
     Parameters
     ----------
-    base_ch   : int   Base channel count (default 128).
+    base_ch   : int   Base channel count (default 512).
     img_size  : int   Input spatial resolution; must be a power of 2 ≥ 8 (default 32).
+    n_classes : int   Number of classes for conditioning (0 = unconditional).
     use_attn  : bool  Whether to add self-attention (default True for ≥64).
     """
 
-    def __init__(self, base_ch: int = 128, img_size: int = 32,
-                 use_attn: bool | None = None):
+    def __init__(self, base_ch: int = 512, img_size: int = 32,
+                 n_classes: int = 0, use_attn: bool | None = None):
         super().__init__()
         assert img_size >= 8 and (img_size & (img_size - 1)) == 0, \
             f"img_size must be a power of 2 ≥ 8, got {img_size}"
 
-        self.base_ch  = base_ch
-        self.img_size = img_size
+        self.base_ch   = base_ch
+        self.img_size  = img_size
+        self.n_classes = n_classes
+        self.conditional = n_classes > 0
 
         if use_attn is None:
             use_attn = (img_size >= 64)
@@ -68,9 +84,6 @@ class Discriminator(nn.Module):
         n_down = int(math.log2(img_size)) - 2   # 32→3, 64→4, 128→5, 256→6
 
         # Attention: inject after the block that produces ~16×16 features
-        # Block i takes spatial from img_size/2^i → img_size/2^(i+1)
-        # For 64: block 0 → 32, block 1 → 16 ← attention here
-        # For 128: block 0 → 64, block 1 → 32, block 2 → 16 ← attention here
         attn_after_block = -1
         if use_attn:
             target_spatial = 16
@@ -98,12 +111,44 @@ class Discriminator(nn.Module):
         self.blocks = nn.Sequential(*layers)
 
         self.pool = nn.AdaptiveAvgPool2d(1)
+
+        # Linear head (unconditional logit)
         self.head = nn.utils.spectral_norm(nn.Linear(ch_out, 1, bias=True))
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Projection discriminator: class embedding for inner product
+        if self.conditional:
+            self.embed = nn.utils.spectral_norm(
+                nn.Embedding(n_classes, ch_out)
+            )
+
+        self.final_ch = ch_out
+
+        # Orthogonal initialisation
+        self._init_weights()
+
+    def _init_weights(self):
+        """Orthogonal initialisation for all conv and linear layers."""
+        for m in self.modules():
+            if isinstance(m, (nn.Conv2d, nn.Linear)):
+                nn.init.orthogonal_(m.weight)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.Embedding):
+                nn.init.orthogonal_(m.weight)
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor | None = None) -> torch.Tensor:
         h = self.blocks(x)
-        h = self.pool(h).view(h.size(0), -1)
-        return self.head(h)
+        h = self.pool(h).view(h.size(0), -1)  # (B, ch_out)
+
+        out = self.head(h)  # (B, 1) — unconditional logit
+
+        # Add projection: embed(y)^T · h
+        if self.conditional and y is not None:
+            embed = self.embed(y)               # (B, ch_out)
+            proj  = (embed * h).sum(dim=1, keepdim=True)  # (B, 1)
+            out   = out + proj
+
+        return out
 
 
 # ──────────────────────────────────────────────
@@ -115,6 +160,7 @@ def compute_gradient_penalty(
     real: torch.Tensor,
     fake: torch.Tensor,
     device: torch.device,
+    y: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Two-sided gradient penalty (WGAN-GP style).
@@ -128,7 +174,7 @@ def compute_gradient_penalty(
     alpha = torch.rand(B, 1, 1, 1, device=device)
     x_hat = (alpha * real + (1 - alpha) * fake.detach()).requires_grad_(True)
 
-    d_hat = D(x_hat)
+    d_hat = D(x_hat, y) if y is not None else D(x_hat)
     grads = autograd.grad(
         outputs=d_hat,
         inputs=x_hat,
@@ -147,12 +193,13 @@ def compute_gradient_penalty(
 def compute_r1_penalty(
     D: nn.Module,
     real: torch.Tensor,
+    y: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     R1 regularisation (one-sided GP on real data only).
     """
     real_req = real.requires_grad_(True)
-    d_real   = D(real_req)
+    d_real   = D(real_req, y) if y is not None else D(real_req)
     grads    = autograd.grad(
         outputs=d_real.sum(),
         inputs=real_req,

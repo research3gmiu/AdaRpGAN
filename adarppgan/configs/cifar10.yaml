@@ -1,33 +1,40 @@
-# AdaRpGAN — Default CIFAR-10 Configuration
-# ============================================
+# AdaRpGAN — Default CIFAR-10 Configuration (v2: Single-Digit FID)
+# =================================================================
 # Use with: python train.py (values here are the argparse defaults)
-# Override any field on the command line, e.g.:  python train.py --epochs 300
+# Override any field on the command line, e.g.:  python train.py --epochs 800
 
 experiment:
   name:      "adarppgan_cifar10"
   seed:      42
-  device:    "auto"          # "auto" → CUDA if available, else CPU
+  device:    "auto"          # "auto" → CUDA if available, else CPU/MPS
 
 data:
   dataset:    "cifar10"
   root:       "./data"
-  batch_size: 64
+  batch_size: 128            # ★ Scaled up from 64 for gradient stability
   workers:    4
   augment:    true           # horizontal flip + random crop
 
 model:
   z_dim:      128
-  g_base_ch:  256            # Generator base channels
-  d_base_ch:  128            # Discriminator base channels
+  g_base_ch:  512            # ★ Generator base channels (scaled from 256)
+  d_base_ch:  512            # ★ Discriminator base channels (scaled from 128)
+  n_classes:  10             # ★ 10 classes for CIFAR-10 projection/CBN
 
 training:
-  epochs:     200
-  lr_g:       0.0002         # TTUR: G uses lower lr
-  lr_d:       0.0004         # TTUR: D uses higher lr
-  beta1:      0.0
-  beta2:      0.9
-  gp_type:    "wgan-gp"      # "wgan-gp" or "r1"
-  amp:        true           # Mixed-precision (requires CUDA)
+  epochs:        800         # ★ Extended training schedule
+  lr_g:          0.0002
+  lr_d:          0.0002
+  beta1:         0.0
+  beta2:         0.999
+  eps:           1e-4        # ★ High epsilon for numerical stability
+  loss_type:     "hinge"     # ★ Hinge loss (SOTA standard)
+  gp_type:       "r1"        # ★ Lazy R1 regularization
+  r1_gamma:      10.0
+  r1_interval:   16          # ★ Lazy penalty every 16 steps
+  warmup_epochs: 5           # ★ Linear warmup
+  use_cosine_lr: true        # ★ Cosine annealing
+  amp:           true        # Mixed-precision
 
 adaptive_controller:
   # Gamma (GP weight) adaptation
@@ -50,8 +57,8 @@ adaptive_controller:
 logging:
   ckpt_dir:     "./checkpoints"
   log_every:    100          # Print log every N D-steps
-  save_every:   5            # Save checkpoint every N epochs
-  sample_every: 5            # Save image grid every N epochs
+  save_every:   50           # Save checkpoint every N epochs
+  sample_every: 25           # Save image grid every N epochs
 
 evaluation:
   n_eval_samples: 50000
@@ -62,3 +69,4 @@ baseline:
   gamma:    10.0
   n_critic: 1
   ckpt_dir: "./checkpoints_baseline"
+

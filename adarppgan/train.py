@@ -39,7 +39,7 @@ from adarppgan.utils import (
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="AdaRpGAN Trainer")
+    p = argparse.ArgumentParser(description="AdaRpGAN Trainer (v2)")
 
     p.add_argument("--mode",       type=str,   default="adaptive",
                    choices=["adaptive", "baseline"],
@@ -53,19 +53,29 @@ def parse_args():
                    help="Image resolution (must be power of 2, ≥ 8)")
     p.add_argument("--data-dir",   type=str,   default=None,
                    help="Path to image folder (required for --dataset image_folder)")
+    p.add_argument("--n-classes",  type=int,   default=None,
+                   help="Number of classes for conditional generation (default: 10 for cifar10, 0 otherwise)")
 
     # Architecture
     p.add_argument("--z-dim",      type=int,   default=128)
-    p.add_argument("--g-ch",       type=int,   default=256, help="Generator base channels")
-    p.add_argument("--d-ch",       type=int,   default=128, help="Discriminator base channels")
+    p.add_argument("--g-ch",       type=int,   default=512, help="Generator base channels")
+    p.add_argument("--d-ch",       type=int,   default=512, help="Discriminator base channels")
 
     # Optimisation
-    p.add_argument("--epochs",     type=int,   default=200)
-    p.add_argument("--batch",      type=int,   default=64)
-    p.add_argument("--lr-g",       type=float, default=2e-4)
-    p.add_argument("--lr-d",       type=float, default=4e-4)
-    p.add_argument("--gp-type",    type=str,   default="wgan-gp",
+    p.add_argument("--epochs",        type=int,   default=800)
+    p.add_argument("--batch",         type=int,   default=128)
+    p.add_argument("--lr-g",          type=float, default=2e-4)
+    p.add_argument("--lr-d",          type=float, default=2e-4)
+    p.add_argument("--eps",           type=float, default=1e-4, help="Adam epsilon")
+    p.add_argument("--loss-type",     type=str,   default="hinge",
+                   choices=["hinge", "rpgan", "vanilla"],
+                   help="Loss function: hinge (SOTA), rpgan, or vanilla")
+    p.add_argument("--gp-type",       type=str,   default="r1",
                    choices=["wgan-gp", "r1"])
+    p.add_argument("--r1-gamma",      type=float, default=10.0, help="R1 penalty weight")
+    p.add_argument("--r1-interval",   type=int,   default=16, help="Lazy R1 interval in D steps")
+    p.add_argument("--warmup-epochs", type=int,   default=5, help="Warmup epochs for cosine LR")
+    p.add_argument("--no-cosine-lr",  action="store_true", help="Disable cosine LR schedule")
 
     # Adaptive controller
     p.add_argument("--gamma-init", type=float, default=10.0)
@@ -98,7 +108,8 @@ def parse_args():
     p.add_argument("--no-amp",     action="store_true", help="Disable mixed precision")
     p.add_argument("--resume",     type=str,   default=None,
                    help="Path to checkpoint to resume from")
-    p.add_argument("--save-every", type=int,   default=5)
+    p.add_argument("--save-every", type=int,   default=50)
+    p.add_argument("--sample-every", type=int, default=25)
     p.add_argument("--log-every",  type=int,   default=100)
 
     return p.parse_args()
@@ -150,6 +161,13 @@ def main():
     print(f"[train.py] device = {device}")
     print(f"[train.py] dataset = {args.dataset}, img_size = {args.img_size}")
 
+    # Determine class conditioning
+    if args.n_classes is None:
+        n_classes = 10 if args.dataset == "cifar10" else 0
+    else:
+        n_classes = args.n_classes
+    print(f"[train.py] conditioning: {n_classes} classes ({'conditional' if n_classes > 0 else 'unconditional'})")
+
     # Reproducibility
     torch.manual_seed(args.seed)
     if device.type == "cuda":
@@ -162,9 +180,9 @@ def main():
     # Data
     train_loader, val_loader = build_data_loader(args)
 
-    # Models (now resolution-flexible)
-    G = Generator(z_dim=args.z_dim, base_ch=args.g_ch, img_size=args.img_size)
-    D = Discriminator(base_ch=args.d_ch, img_size=args.img_size)
+    # Models (resolution-flexible + class-conditional)
+    G = Generator(z_dim=args.z_dim, base_ch=args.g_ch, img_size=args.img_size, n_classes=n_classes)
+    D = Discriminator(base_ch=args.d_ch, img_size=args.img_size, n_classes=n_classes)
     n_params_G = sum(p.numel() for p in G.parameters()) / 1e6
     n_params_D = sum(p.numel() for p in D.parameters()) / 1e6
     print(f"[Model] G: {n_params_G:.2f}M params  |  D: {n_params_D:.2f}M params")
@@ -183,16 +201,24 @@ def main():
             cooldown      = args.cooldown,
         )
         cfg = TrainerConfig(
-            lr_g        = args.lr_g,
-            lr_d        = args.lr_d,
-            batch_size  = args.batch,
-            n_epochs    = args.epochs,
-            gp_type     = args.gp_type,
-            ctrl        = ctrl_cfg,
-            ckpt_dir    = args.ckpt_dir,
-            log_every   = args.log_every,
-            save_every  = args.save_every,
-            amp         = not args.no_amp,
+            lr_g          = args.lr_g,
+            lr_d          = args.lr_d,
+            eps           = args.eps,
+            batch_size    = args.batch,
+            n_epochs      = args.epochs,
+            loss_type     = args.loss_type,
+            gp_type       = args.gp_type,
+            r1_gamma      = args.r1_gamma,
+            r1_interval   = args.r1_interval,
+            n_classes     = n_classes,
+            warmup_epochs = args.warmup_epochs,
+            use_cosine_lr = not args.no_cosine_lr,
+            ctrl          = ctrl_cfg,
+            ckpt_dir      = args.ckpt_dir,
+            log_every     = args.log_every,
+            save_every    = args.save_every,
+            sample_every  = args.sample_every,
+            amp           = not args.no_amp,
         )
         trainer = AdaRpGANTrainer(G, D, train_loader, cfg, device, val_loader)
 
@@ -216,17 +242,25 @@ def main():
 
     else:  # baseline
         cfg = BaselineConfig(
-            lr_g        = args.lr_g,
-            lr_d        = args.lr_d,
-            batch_size  = args.batch,
-            n_epochs    = args.epochs,
-            gamma       = args.gamma,
-            n_critic    = args.n_critic,
-            gp_type     = args.gp_type,
-            ckpt_dir    = args.ckpt_dir + "_baseline",
-            log_every   = args.log_every,
-            save_every  = args.save_every,
-            amp         = not args.no_amp,
+            lr_g          = args.lr_g,
+            lr_d          = args.lr_d,
+            eps           = args.eps,
+            batch_size    = args.batch,
+            n_epochs      = args.epochs,
+            gamma         = args.gamma,
+            n_critic      = args.n_critic,
+            loss_type     = args.loss_type,
+            gp_type       = args.gp_type,
+            r1_gamma      = args.r1_gamma,
+            r1_interval   = args.r1_interval,
+            n_classes     = n_classes,
+            warmup_epochs = args.warmup_epochs,
+            use_cosine_lr = not args.no_cosine_lr,
+            ckpt_dir      = args.ckpt_dir + "_baseline",
+            log_every     = args.log_every,
+            save_every    = args.save_every,
+            sample_every  = args.sample_every,
+            amp           = not args.no_amp,
         )
         trainer = BaselineRpGANTrainer(G, D, train_loader, cfg, device)
         trainer.fit()
